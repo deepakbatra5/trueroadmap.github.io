@@ -20,111 +20,7 @@ function resolveApiUrl() {
 
 const CHAT_API_URL = resolveApiUrl();
 
-function escapeHtml(input) {
-  return input
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function parseInlineMarkdown(text) {
-  return text
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
-}
-
-function markdownToHtml(markdownText) {
-  const codeBlocks = [];
-  const escaped = escapeHtml(markdownText || "").replace(/\r\n/g, "\n");
-  const textWithTokens = escaped.replace(/```([a-zA-Z0-9_-]+)?\n?([\s\S]*?)```/g, (_m, lang, code) => {
-    const token = `@@CODEBLOCK_${codeBlocks.length}@@`;
-    codeBlocks.push({ lang: lang || "", code: code.replace(/\n$/, "") });
-    return token;
-  });
-
-  const lines = textWithTokens.split("\n");
-  const htmlParts = [];
-  let inUnorderedList = false;
-  let inOrderedList = false;
-
-  function closeLists() {
-    if (inUnorderedList) {
-      htmlParts.push("</ul>");
-      inUnorderedList = false;
-    }
-    if (inOrderedList) {
-      htmlParts.push("</ol>");
-      inOrderedList = false;
-    }
-  }
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    if (!line) {
-      closeLists();
-      continue;
-    }
-
-    const headingMatch = line.match(/^(#{1,3})\s+(.*)$/);
-    if (headingMatch) {
-      closeLists();
-      const level = headingMatch[1].length;
-      htmlParts.push(`<h${level}>${parseInlineMarkdown(headingMatch[2])}</h${level}>`);
-      continue;
-    }
-
-    const unorderedMatch = line.match(/^[-*]\s+(.*)$/);
-    if (unorderedMatch) {
-      if (inOrderedList) {
-        htmlParts.push("</ol>");
-        inOrderedList = false;
-      }
-      if (!inUnorderedList) {
-        htmlParts.push("<ul>");
-        inUnorderedList = true;
-      }
-      htmlParts.push(`<li>${parseInlineMarkdown(unorderedMatch[1])}</li>`);
-      continue;
-    }
-
-    const orderedMatch = line.match(/^\d+[.)]\s+(.*)$/);
-    if (orderedMatch) {
-      if (inUnorderedList) {
-        htmlParts.push("</ul>");
-        inUnorderedList = false;
-      }
-      if (!inOrderedList) {
-        htmlParts.push("<ol>");
-        inOrderedList = true;
-      }
-      htmlParts.push(`<li>${parseInlineMarkdown(orderedMatch[1])}</li>`);
-      continue;
-    }
-
-    closeLists();
-    htmlParts.push(`<p>${parseInlineMarkdown(line)}</p>`);
-  }
-
-  closeLists();
-
-  let html = htmlParts.join("");
-  html = html.replace(/@@CODEBLOCK_(\d+)@@/g, (_m, indexStr) => {
-    const index = Number(indexStr);
-    const block = codeBlocks[index];
-    if (!block) {
-      return "";
-    }
-    const languageClass = block.lang ? ` class=\"language-${block.lang}\"` : "";
-    return `<pre><code${languageClass}>${block.code}</code></pre>`;
-  });
-
-  return html || "<p>No response received.</p>";
-}
+let chatHistory = [];
 
 function addMessage(text, type, extraClass = "") {
   const item = document.createElement("div");
@@ -135,10 +31,51 @@ function addMessage(text, type, extraClass = "") {
   return item;
 }
 
+function typeBotMessage(markdownText) {
+  return new Promise((resolve) => {
+    const item = document.createElement("div");
+    item.className = "message bot";
+    chatBox.appendChild(item);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    
+    let i = 0;
+    const speed = 15;
+    const charsPerTick = 3;
+    const textLength = (markdownText || "").length;
+    
+    if (textLength === 0) {
+      item.innerHTML = "<p>No response received.</p>";
+      resolve(item);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      i += charsPerTick;
+      if (i >= textLength) {
+        i = textLength;
+        clearInterval(interval);
+      }
+      
+      const currentText = markdownText.slice(0, i);
+      const rawHtml = typeof marked !== 'undefined' ? marked.parse(currentText) : "<p>" + currentText + "</p>";
+      const safeHtml = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(rawHtml) : rawHtml;
+      
+      item.innerHTML = safeHtml;
+      chatBox.scrollTop = chatBox.scrollHeight;
+      
+      if (i >= textLength) {
+        resolve(item);
+      }
+    }, speed);
+  });
+}
+
 function addBotMessage(markdownText) {
   const item = document.createElement("div");
   item.className = "message bot";
-  item.innerHTML = markdownToHtml(markdownText);
+  const rawHtml = typeof marked !== 'undefined' ? marked.parse(markdownText || "") : "<p>" + markdownText + "</p>";
+  const safeHtml = typeof DOMPurify !== 'undefined' ? DOMPurify.sanitize(rawHtml) : rawHtml;
+  item.innerHTML = safeHtml || "<p>No response received.</p>";
   chatBox.appendChild(item);
   chatBox.scrollTop = chatBox.scrollHeight;
   return item;
@@ -180,7 +117,7 @@ async function sendMessage(messageText) {
     const res = await fetch(CHAT_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, role: roleSelect.value })
+      body: JSON.stringify({ message, role: roleSelect.value, history: chatHistory })
     });
 
     if (!res.ok) {
@@ -189,7 +126,13 @@ async function sendMessage(messageText) {
 
     const data = await res.json();
     pending.remove();
-    addBotMessage(data.reply || "No response received.");
+    if (data.reply) {
+      await typeBotMessage(data.reply);
+      chatHistory.push({ role: "user", content: message });
+      chatHistory.push({ role: "assistant", content: data.reply });
+    } else {
+      addBotMessage("No response received.");
+    }
   } catch (err) {
     pending.remove();
     addMessage("Unable to connect to the assistant right now. Please try again.", "bot");
@@ -203,6 +146,12 @@ async function sendMessage(messageText) {
 chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   sendMessage(messageInput.value);
+});
+
+roleSelect.addEventListener("change", (event) => {
+  chatBox.innerHTML = "";
+  chatHistory = [];
+  addMessage(`Switched to ${event.target.options[event.target.selectedIndex].text} role. Started a new chat.`, "bot");
 });
 
 themeSelect.addEventListener("change", (event) => {

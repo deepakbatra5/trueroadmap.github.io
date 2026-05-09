@@ -14,14 +14,15 @@ AI chat app with role-based assistants, deployed serverless on Vercel.
 ### Local Testing
 
 ```bash
+# Install Node.js (LTS) first
 npm install
 # Create .env from .env.example
-# Add your OPENAI_API_KEY
+# Add your GROQ_API_KEY
 ```
 
-To test the API function locally:
+To run the app locally (serves `public/` and `/api/chat`):
 ```bash
-node api/chat.js
+npm run dev
 ```
 
 ### Deploy to Vercel
@@ -42,7 +43,7 @@ node api/chat.js
 
 3. **Set Environment Variable**:
    - After deployment starts, go to Project Settings → Environment Variables
-   - Add: `OPENAI_API_KEY` = your OpenAI key
+   - Add: `GROQ_API_KEY` = your Groq key
    - Redeploy
 
 Your app is live! 🚀
@@ -87,13 +88,14 @@ Response:
 
 Set in Vercel dashboard (Project Settings → Environment Variables):
 
-- `OPENAI_API_KEY` (required) - Your OpenAI API key
+- `GROQ_API_KEY` (required) - Your Groq API key
+- `GROQ_MODEL` (optional) - Defaults to `llama3-8b-8192`
 
 ## Tech Stack
 
 - **Frontend**: HTML, CSS, JavaScript (Vanilla)
 - **Backend**: Node.js serverless function
-- **AI**: OpenAI GPT-4o-mini
+- **AI**: Groq (OpenAI-compatible Chat Completions)
 - **Hosting**: Vercel (zero-config deployment)
 
 ## License

@@ -3,10 +3,16 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "dev": "node server.js",
     "check": "node --check api/chat.js"
   },
   "dependencies": {
+    "cors": "^2.8.6",
     "dotenv": "^16.0.0",
+    "express": "^5.2.1",
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "vercel": "^53.3.1"
   }
 }
